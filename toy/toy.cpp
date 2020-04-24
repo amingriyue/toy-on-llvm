@@ -36,55 +36,63 @@ enum Token_Type {
   NUMERIC_TOKEN,
   IF_TOKEN,
   THEN_TOKEN,
-  ELSE_TOKEN
+  ELSE_TOKEN,
+  FOR_TOKEN,
+  IN_TOKEN,
+  BINARY_TOKEN,
+  UNARY_TOKEN,
 };
-  
+
 FILE *file;
 static std::string Identifier_string;
 static int Numeric_Val;
 
 static int get_token() { 
   static int LastChar = ' ';
-	
-	while(isspace(LastChar))
-	  LastChar = fgetc(file);
-	  
-	if(isalpha(LastChar)) {
-	  Identifier_string = LastChar;
-	  while(isalnum((LastChar = fgetc(file))))
-	    Identifier_string += LastChar;
-		
-	  if(Identifier_string == "def") return DEF_TOKEN;
+
+  while(isspace(LastChar))
+    LastChar = fgetc(file);
+
+  if(isalpha(LastChar)) {
+    Identifier_string = LastChar;
+    while(isalnum((LastChar = fgetc(file))))
+      Identifier_string += LastChar;
+
+    if(Identifier_string == "def") return DEF_TOKEN;
     if (Identifier_string == "if") return IF_TOKEN;
     if (Identifier_string == "then") return THEN_TOKEN;
     if (Identifier_string == "else") return ELSE_TOKEN;
+    if (Identifier_string == "for") return FOR_TOKEN;
+    if (Identifier_string == "in") return IN_TOKEN;
+    if (Identifier_string == "binary") return BINARY_TOKEN;
 	  
-	  return IDENTIFIER_TOKEN;
+    return IDENTIFIER_TOKEN;
 	}
 	
-	if(isdigit(LastChar)) {
-	  std::string NumStr;
-	  do {
-	    NumStr += LastChar;
-		LastChar = fgetc(file);
-	  }  while(isdigit(LastChar));
+  if(isdigit(LastChar)) {
+    std::string NumStr;
+    do {
+      NumStr += LastChar;
+      LastChar = fgetc(file);
+    } while(isdigit(LastChar));
 	
-	  Numeric_Val = strtod(NumStr.c_str(), 0);
-	  return NUMERIC_TOKEN;
-    }
+    Numeric_Val = strtod(NumStr.c_str(), 0);
+    return NUMERIC_TOKEN;
+  }
 
-    if(LastChar == '#') {
-      do LastChar = fgetc(file);
-      while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+  if(LastChar == '#') {
+    do LastChar = fgetc(file);
+    while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
     
-      if(LastChar != EOF) return get_token();
-    }
-    
-    if(LastChar == EOF) return EOF_TOKEN;
+    if(LastChar != EOF) return get_token();
+  }
 
-    int ThisChar = LastChar;
-	LastChar = fgetc(file);
-	return ThisChar;
+  if(LastChar == EOF) return EOF_TOKEN;
+
+  int ThisChar = LastChar;
+  LastChar = fgetc(file);
+
+  return ThisChar;
 }
 
 namespace {
@@ -100,6 +108,15 @@ class ExprIfAST : public BaseAST {
 public:
   ExprIfAST(BaseAST *cond, BaseAST *then, BaseAST *else_st)
     : Cond(cond), Then(then), Else(else_st) {}
+  Value *Codegen() override;
+};
+
+class ExprForAST : public BaseAST {
+  std::string Var_Name;
+  BaseAST *Start, *End, *Step, *Body;
+public:
+  ExprForAST(const std::string &varname, BaseAST *start, BaseAST *end, BaseAST *step, BaseAST *body)
+    : Var_Name(varname), Start(start), End(end), Step(step), Body(body) {}
   Value *Codegen() override;
 };
 
@@ -138,9 +155,21 @@ public:
 class FunctionDeclAST {
   std::string Func_Name;
   std::vector<std::string> Arguments;
+  bool isOperator;
+  unsigned Precedence;
 public:
-  FunctionDeclAST(const std::string &name, const std::vector<std::string> &args) :
-  Func_Name(name), Arguments(args) {};
+  FunctionDeclAST(const std::string &name, const std::vector<std::string> &args, bool isoperator = false, unsigned prec = 0)
+    : Func_Name(name), Arguments(args), isOperator(isoperator), Precedence(prec) {};
+
+  bool isUnaryOp() const { return isOperator && Arguments.size() == 1; }
+  bool isBinaryOp() const { return isOperator && Arguments.size() == 2; }
+
+  char getOperatorName() const {
+    assert(isUnaryOp() || isBinaryOp());
+    return Func_Name[Func_Name.size() - 1];
+  }
+
+  unsigned getBinaryPrecedence() const { return Precedence; }
   Function *Codegen ();
 };
 
@@ -172,6 +201,7 @@ static int getBinOpPrecedence() {
 
 static BaseAST* expression_parser();
 static BaseAST* If_parser();
+static BaseAST* For_parser();
 
 static BaseAST* identifier_parser() {
   std::string IdName = Identifier_string;
@@ -225,6 +255,7 @@ static BaseAST* Base_Parser() {
     case NUMERIC_TOKEN : return numeric_parser();
     case '(' : return paran_parser();
     case IF_TOKEN : return If_parser();
+    case FOR_TOKEN : return For_parser();
   }
 }
 
@@ -284,12 +315,95 @@ static BaseAST* If_parser() {
   return new ExprIfAST(Cond, Then, Else);
 }
 
-static FunctionDeclAST *func_decl_parser() {
-  if(Current_token != IDENTIFIER_TOKEN)
-    return 0;
-  
-  std::string FnName = Identifier_string;
+static BaseAST* For_parser() {
   next_token();
+
+  if (Current_token != IDENTIFIER_TOKEN)
+    return 0;
+
+  std::string IdName = Identifier_string;
+  next_token();
+
+  if (Current_token != '=')
+    return 0;
+  next_token();
+
+  BaseAST *Start = expression_parser();
+  if (!Start)
+    return 0;
+
+  if (Current_token != ',')
+    return 0;
+
+  next_token();
+
+  BaseAST *End = expression_parser();
+  if (!End)
+    return 0;
+
+  BaseAST *Step = 0;
+  if (Current_token == ',') {
+    next_token();
+    Step = expression_parser();
+    if (!Step)
+      return 0;
+  }
+
+  if (Current_token != IN_TOKEN)
+    return 0;
+  next_token();
+
+  BaseAST *Body = expression_parser();
+  if (!Body)
+    return 0;
+
+  return new ExprForAST(IdName, Start, End, Step, Body);
+}
+
+static FunctionDeclAST *func_decl_parser() {
+  std::string FnName;
+
+  unsigned Kind = 0;
+  unsigned BinaryPrecedence = 30;
+
+  switch (Current_token) {
+    default:
+      return 0;
+    case IDENTIFIER_TOKEN:
+      FnName = Identifier_string;
+      Kind = 0;
+      next_token();
+      break;
+    case UNARY_TOKEN:
+      next_token();
+      if (!isascii(Current_token))
+        return 0;
+
+      FnName = "unary";
+      FnName += (char)Current_token;
+      Kind = 1;
+      next_token();
+      break;
+    case BINARY_TOKEN:
+      next_token();
+      if (!isascii(Current_token))
+        return 0;
+
+      FnName = "binary";
+      FnName += (char)Current_token;
+      Kind = 2;
+      next_token();
+
+      if (Current_token == NUMERIC_TOKEN) {
+        if (Numeric_Val < 1 || Numeric_Val > 100)
+          return 0;
+
+        BinaryPrecedence = (unsigned)Numeric_Val;
+        next_token();
+      }
+      break;
+  }
+
  
   if(Current_token != '(')
     return 0;
@@ -301,8 +415,11 @@ static FunctionDeclAST *func_decl_parser() {
     return 0;
 	
   next_token();
+
+  if (Kind && Function_Argument_Names.size() != Kind)
+    return 0;
   
-  return new FunctionDeclAST(FnName, Function_Argument_Names);
+  return new FunctionDeclAST(FnName, Function_Argument_Names, Kind != 0, BinaryPrecedence);
 }
 
 static FunctionDefnAST *func_defn_parser() {
@@ -360,8 +477,11 @@ Value *BinaryAST::Codegen() {
   case '<' :
       L = Builder.CreateICmpULT(L, R, "cmptmp");
       return Builder.CreateZExt(L, Type::getInt32Ty(getGlobalContext()), "booltmp");
-  default : return 0;
+  default : break;
   }
+  Function *F = Module_Ob->getFunction(std::string("binary") + Bin_Operator);
+  Value *Oprs[2] = {L, R};
+  return Builder.CreateCall(F, Oprs, "binop");
 }
 
 Value *ExprIfAST::Codegen() {
@@ -403,6 +523,61 @@ Value *ExprIfAST::Codegen() {
   Phi->addIncoming(ThenVal, ThenBB);
   Phi->addIncoming(ElseVal, ElseBB);
   return Phi;
+}
+
+Value *ExprForAST::Codegen() {
+  Value *StartVal = Start->Codegen();
+  if (!StartVal)
+    return 0;
+
+  Function *TheFunction = Builder.GetInsertBlock()->getParent();
+  BasicBlock *PreheaderBB = Builder.GetInsertBlock();
+  BasicBlock *LoopBB = BasicBlock::Create(getGlobalContext(), "loop", TheFunction);
+
+  Builder.CreateBr(LoopBB);
+
+  Builder.SetInsertPoint(LoopBB);
+  PHINode *Variable = Builder.CreatePHI(Type::getInt32Ty(getGlobalContext()), 2, Var_Name.c_str());
+  Variable->addIncoming(StartVal, PreheaderBB);
+
+  Value *OldVal = Named_Values[Var_Name];
+  Named_Values[Var_Name] = Variable;
+
+  Value *bodyValue = Body->Codegen();
+  if (!bodyValue)
+    return 0;
+
+  Value *StepVal;
+  if (Step) {
+    StepVal = Step->Codegen();
+    if (!StepVal)
+      return 0;
+  } else {
+    StepVal = ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 1);
+  }
+
+  Value *NextVar = Builder.CreateAdd(Variable, StepVal, "nextvar");
+
+  Value *EndCond = End->Codegen();
+  if (!EndCond)
+    return EndCond;
+
+  EndCond = Builder.CreateICmpNE(EndCond, ConstantInt::get(Type::getInt32Ty(getGlobalContext()), 0), "loopcond");
+
+  BasicBlock *LoopEndBB = Builder.GetInsertBlock();
+  BasicBlock *AfterBB = BasicBlock::Create(getGlobalContext(), "afterloop", TheFunction);
+
+  Builder.CreateCondBr(EndCond, LoopBB, AfterBB);
+  Builder.SetInsertPoint(AfterBB);
+
+  Variable->addIncoming(NextVar, LoopEndBB);
+
+  if (OldVal)
+    Named_Values[Var_Name] = OldVal;
+  else
+    Named_Values.erase(Var_Name);
+
+  return Constant::getNullValue(Type::getInt32Ty(getGlobalContext()));
 }
 
 Value *FunctionCallAST::Codegen() {
@@ -448,13 +623,16 @@ Function *FunctionDefnAST::Codegen() {
   Function *TheFunction = Func_Decl->Codegen();
   if(TheFunction == 0) return 0;
   
+  if (Func_Decl->isBinaryOp())
+    Operator_Precedence[Func_Decl->getOperatorName()] = Func_Decl->getBinaryPrecedence();
+
   BasicBlock *BB = BasicBlock::Create(getGlobalContext(),"entry", TheFunction);
   Builder.SetInsertPoint(BB);
   
   if(Value *RetVal = Body->Codegen()) {
     Builder.CreateRet(RetVal);
     verifyFunction(*TheFunction);
-    Global_FP->run(*TheFunction);
+    //Global_FP->run(*TheFunction);
     return TheFunction;
   }
   
@@ -502,12 +680,12 @@ double putchard(double X) {
 int main(int argc, char* argv[]) {
   LLVMContext &Context = getGlobalContext();
   init_precedence();
-  
+
   file = fopen(argv[1], "r");
   if(file == 0) {
     printf("Could not open file\n");
   }
-  
+
   next_token();
   Module_Ob = new Module("my compiler", Context);
   legacy::FunctionPassManager My_FP(Module_Ob);
@@ -521,11 +699,3 @@ int main(int argc, char* argv[]) {
   Module_Ob->dump();
   return 0;
 }
-	
-    
-
-  
-  
-	
-	
-	  
