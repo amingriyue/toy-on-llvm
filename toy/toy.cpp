@@ -30,22 +30,22 @@
 using namespace llvm;
 
 enum Token_Type {
-  EOF_TOKEN = 0,
-  DEF_TOKEN,
-  IDENTIFIER_TOKEN,
-  NUMERIC_TOKEN,
-  IF_TOKEN,
-  THEN_TOKEN,
-  ELSE_TOKEN,
-  FOR_TOKEN,
-  IN_TOKEN,
-  BINARY_TOKEN,
-  UNARY_TOKEN,
+  EOF_TOKEN = -1,
+  DEF_TOKEN = -2,
+  IDENTIFIER_TOKEN = -3,
+  NUMERIC_TOKEN = -4,
+  IF_TOKEN = -5,
+  THEN_TOKEN = -6,
+  ELSE_TOKEN = -7,
+  FOR_TOKEN = -8,
+  IN_TOKEN = -9,
+  BINARY_TOKEN = -10,
+  UNARY_TOKEN = -11,
 };
 
 FILE *file;
 static std::string Identifier_string;
-static int Numeric_Val;
+static int Numeric_Val; 
 
 static int get_token() { 
   static int LastChar = ' ';
@@ -65,16 +65,17 @@ static int get_token() {
     if (Identifier_string == "for") return FOR_TOKEN;
     if (Identifier_string == "in") return IN_TOKEN;
     if (Identifier_string == "binary") return BINARY_TOKEN;
+    if (Identifier_string == "unary") return UNARY_TOKEN;
 	  
     return IDENTIFIER_TOKEN;
 	}
 	
-  if(isdigit(LastChar)) {
+  if(isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
       NumStr += LastChar;
       LastChar = fgetc(file);
-    } while(isdigit(LastChar));
+    } while(isdigit(LastChar) || LastChar == '.');
 	
     Numeric_Val = strtod(NumStr.c_str(), 0);
     return NUMERIC_TOKEN;
@@ -101,6 +102,15 @@ class BaseAST {
   public:
     virtual ~BaseAST() {}
 	virtual Value *Codegen() = 0;
+};
+
+class ExprUnaryAST : public BaseAST {
+  char Opcode;
+  BaseAST *Operand;
+public:
+  ExprUnaryAST(char opcode, BaseAST *operand)
+    : Opcode(opcode), Operand(operand) {}
+  virtual Value *Codegen();
 };
 
 class ExprIfAST : public BaseAST {
@@ -202,6 +212,7 @@ static int getBinOpPrecedence() {
 static BaseAST* expression_parser();
 static BaseAST* If_parser();
 static BaseAST* For_parser();
+static BaseAST* unary_parser();
 
 static BaseAST* identifier_parser() {
   std::string IdName = Identifier_string;
@@ -269,12 +280,13 @@ static BaseAST* binary_op_parser(int Old_Prec, BaseAST *LHS) {
     int BinOp = Current_token;
     next_token();
 
-    BaseAST* RHS = Base_Parser();
+//    BaseAST* RHS = Base_Parser();
+    BaseAST* RHS = unary_parser();
     if(!RHS) return 0;
 
     int Next_Prec = getBinOpPrecedence();
     if(Operator_Prec < Next_Prec) {
-      RHS = binary_op_parser(Operator_Prec+1, RHS);
+      RHS = binary_op_parser(Operator_Prec + 1, RHS);
       if(RHS == 0) return 0;
     }
     
@@ -283,7 +295,8 @@ static BaseAST* binary_op_parser(int Old_Prec, BaseAST *LHS) {
 }
 
 static BaseAST* expression_parser() {
-  BaseAST *LHS = Base_Parser();
+  //BaseAST *LHS = Base_Parser();
+  BaseAST *LHS = unary_parser();
   if(!LHS) return 0;
   return binary_op_parser(0, LHS);
 }
@@ -360,8 +373,22 @@ static BaseAST* For_parser() {
   return new ExprForAST(IdName, Start, End, Step, Body);
 }
 
+static BaseAST *unary_parser() {
+  if (!isascii(Current_token) || Current_token == '(' || Current_token == ',')
+    return Base_Parser();
+
+  int Op = Current_token;
+
+  next_token();
+
+  if (BaseAST *Operand = unary_parser())
+    return new ExprUnaryAST(Op, Operand);
+
+  return 0;
+}
+
 static FunctionDeclAST *func_decl_parser() {
-  std::string FnName;
+  std::string FnName = Identifier_string;
 
   unsigned Kind = 0;
   unsigned BinaryPrecedence = 30;
@@ -454,6 +481,7 @@ LLVMContext& getGlobalContext() { return MyGlobalContext; }
 static IRBuilder<> Builder(getGlobalContext());
 static legacy::FunctionPassManager *Global_FP;
 static std::map<std::string, Value*> Named_Values;
+static ExecutionEngine *TheExecutionEngine;
 
 Value *NumericAST::Codegen() {
   return ConstantInt::get(Type::getInt32Ty(getGlobalContext()), numeric_val);
@@ -580,6 +608,18 @@ Value *ExprForAST::Codegen() {
   return Constant::getNullValue(Type::getInt32Ty(getGlobalContext()));
 }
 
+Value *ExprUnaryAST::Codegen() {
+  Value *OperandV = Operand->Codegen();
+
+  if (!OperandV) return 0;
+
+  Function *F = Module_Ob ->getFunction(std::string("unary") + Opcode);
+
+  if (!F) return 0;
+
+  return Builder.CreateCall(F, OperandV, "unop");
+}
+
 Value *FunctionCallAST::Codegen() {
   Function *CalleeF = Module_Ob->getFunction(Function_Callee);
   
@@ -643,13 +683,16 @@ Function *FunctionDefnAST::Codegen() {
 static void HandleDefn() {
   if (FunctionDefnAST *F = func_defn_parser()) {
     if(Function* LF = F->Codegen()) {
-	}
+      fprintf(stderr, "Read function definition:");
+      fprintf(stderr, "\n");
+	  }
   }
   else {
     next_token();
   }
 }
 
+/*
 static void HandleTopExpression() {
   if(FunctionDefnAST *F = top_level_parser()) {
     if(Function *LF = F->Codegen()) {
@@ -659,6 +702,20 @@ static void HandleTopExpression() {
     next_token();
   }
 }
+*/
+static void HandleTopExpression() {
+  //if (FunctionDefnAST *F = expression_parser()) {
+  if (FunctionDefnAST *F = top_level_parser()) {
+    if (Function *LF = F->Codegen()) {
+      LF->dump();
+      //void *FPtr = TheExecutionEngine->getPointerToFunction(LF);
+      //fprintf(stderr, "Evaluated to %f\n", FP());
+    } else {
+      next_token();
+    }
+  }
+}
+
 
 static void Driver() {
   while(1) {
@@ -681,15 +738,32 @@ int main(int argc, char* argv[]) {
   LLVMContext &Context = getGlobalContext();
   init_precedence();
 
+  //TheExecutionEngine = EngineBuilder(Module_Ob).create();
   file = fopen(argv[1], "r");
   if(file == 0) {
     printf("Could not open file\n");
   }
 
   next_token();
+
   Module_Ob = new Module("my compiler", Context);
+
+
+#if 0
+  std::string ErrStr;
+  TheExecutionEngine =
+      EngineBuilder(std::move(TheModule))
+          .setErrorStr(&ErrStr)
+          .setMCJITMemoryManager(std::make_unique<SectionMemoryManager>())
+          .create();
+  if (!TheExecutionEngine) {
+    exit(1);
+  }
+#endif
+  //Module_Ob->setDataLayout(TheExecutionEngine->getDataLayout());
+
   legacy::FunctionPassManager My_FP(Module_Ob);
-//  My_FP.add(createBasicAliasAnalysisPass());
+  //My_FP.add(createBasicAliasAnalysisPass());
   My_FP.add(createInstructionCombiningPass());
   My_FP.add(createReassociatePass());
   My_FP.add(createGVNPass());
