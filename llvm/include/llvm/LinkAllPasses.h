@@ -239,6 +239,7 @@ namespace {
             llvm::AAMDNodes()); // for -print-alias-sets
       (void) llvm::AreStatisticsEnabled();
       (void) llvm::sys::RunningOnValgrind();
+      (void) llvm::createFuncBlockCountPass();
     }
   } ForcePassLinking; // Force link by creating a global definition.
 }

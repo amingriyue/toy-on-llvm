@@ -18,6 +18,7 @@ namespace llvm {
 
 class PassRegistry;
 
+void initializeFuncBlockCount2Pass(PassRegistry&);
 /// Initialize all passes linked into the TransformUtils library.
 void initializeCore(PassRegistry&);
 

@@ -514,6 +514,8 @@ Pass *createLoopSimplifyCFGPass();
 // transformations.
 //
 Pass *createWarnMissedTransformationsPass();
+
+Pass *createFuncBlockCountPass();
 } // End llvm namespace
 
 #endif

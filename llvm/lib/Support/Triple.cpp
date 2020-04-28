@@ -50,6 +50,7 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case tcele:          return "tcele";
   case thumb:          return "thumb";
   case thumbeb:        return "thumbeb";
+  case toy:            return "toy";
   case x86:            return "i386";
   case x86_64:         return "x86_64";
   case xcore:          return "xcore";
@@ -90,6 +91,7 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
   case armeb:
   case thumb:
   case thumbeb:     return "arm";
+  case toy:            return "toy";
 
   case avr:         return "avr";
 
@@ -295,6 +297,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("tcele", tcele)
     .Case("thumb", thumb)
     .Case("thumbeb", thumbeb)
+    .Case("toy", toy)
     .Case("x86", x86)
     .Case("x86-64", x86_64)
     .Case("xcore", xcore)
@@ -404,6 +407,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Case("armeb", Triple::armeb)
     .Case("thumb", Triple::thumb)
     .Case("thumbeb", Triple::thumbeb)
+    .Case("toy", Triple::toy)
     .Case("avr", Triple::avr)
     .Case("msp430", Triple::msp430)
     .Cases("mips", "mipseb", "mipsallegrex", "mipsisa32r6",
@@ -700,6 +704,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::tce:
   case Triple::tcele:
   case Triple::thumbeb:
+  case Triple::toy:
   case Triple::xcore:
     return Triple::ELF;
 
@@ -1252,6 +1257,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::tcele:
   case llvm::Triple::thumb:
   case llvm::Triple::thumbeb:
+  case llvm::Triple::toy:
   case llvm::Triple::x86:
   case llvm::Triple::xcore:
   case llvm::Triple::amdil:
@@ -1337,6 +1343,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::tcele:
   case Triple::thumb:
   case Triple::thumbeb:
+  case Triple::toy:
   case Triple::x86:
   case Triple::xcore:
   case Triple::lanai:
@@ -1423,6 +1430,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::spir:            T.setArch(Triple::spir64);     break;
   case Triple::thumb:           T.setArch(Triple::aarch64);    break;
   case Triple::thumbeb:         T.setArch(Triple::aarch64_be); break;
+  case Triple::toy:         T.setArch(UnknownArch); break;
   case Triple::wasm32:          T.setArch(Triple::wasm64);     break;
   case Triple::renderscript32:  T.setArch(Triple::renderscript64);     break;
   }

@@ -19,21 +19,10 @@
 [common]
 subdirectories =
  AMDGPU
- ARC
  ARM
  AArch64
- AVR
- BPF
- Lanai
- Hexagon
- MSP430
- NVPTX
- Mips
- PowerPC
  RISCV
- Sparc
- SystemZ
- WebAssembly
+ TOY
  X86
  XCore
 

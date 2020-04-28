@@ -321,6 +321,8 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_AMDGPU_REL64: return "rel64";
   case VK_AMDGPU_ABS32_LO: return "abs32@lo";
   case VK_AMDGPU_ABS32_HI: return "abs32@hi";
+  case VK_TOY_LO: return "TOY_LO";
+  case VK_TOY_HI: return "TOY_HI";
   }
   llvm_unreachable("Invalid variant kind");
 }
