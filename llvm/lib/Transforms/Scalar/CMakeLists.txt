@@ -12,6 +12,7 @@ add_llvm_library(LLVMScalarOpts
   EarlyCSE.cpp
   FlattenCFGPass.cpp
   Float2Int.cpp
+  FuncBlockCount2.cpp
   GuardWidening.cpp
   GVN.cpp
   GVNHoist.cpp

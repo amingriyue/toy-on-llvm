@@ -13,6 +13,7 @@ endif()
 add_llvm_library( LLVMDavid MODULE
   David.cpp
   FuncBlockCount.cpp
+  OpcodeCounter.cpp
 
   DEPENDS
   intrinsics_gen
